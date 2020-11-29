@@ -1,63 +1,33 @@
 <?php
-define('TOKEN', "BOT_TOKEN");
+ob_start();
 
-$doc = file_get_contents('api-doc-8.x.json');
-$json_doc = json_decode($doc, true);
-$base_url = "https://laravel.com/api/8.x/";
-$update_id = 0;
+require_once "config/api.php";
+require_once "inc/variables.php";
+require_once "command/lista.php";
+require_once "command/listaEspecial.php";
 
-# Loop infinito hasta que se mate el programa
-while(1) {
-    $str = sendMethod("getUpdates", ["offset"=>($update_id + 1)]);
-    $json = json_decode($str);
-    foreach ($json->result as $result) {
-        $update_id = $result->update_id;
-        # Inicia proceso para los inline query
-        if (property_exists($result, 'inline_query')) {
-            $query = $result->inline_query->query;
-            $inline_query_id = $result->inline_query->id;
-            # Se buscará a partir de 3 caracteres en el término de búsqueda
-            if (strlen($query) > 3) {
-                $result_doc = [];
-                $count = 0;
-                foreach ($json_doc as $doc) {
-                    if (strpos($doc['doc'], $query) !== false) {
-                        $result_doc[] =     [
-                            "type" => "article",
-                            "id" => ++$count,
-                                "title" => "{$doc['type']}: {$doc['name']}",
-                            "url" => $base_url.$doc['link'],
-                            "hide_url" => true,
-                            "description" => $doc['doc'],
-                            "input_message_content" => [
-                                "parse_mode" => "HTML",
-                                "message_text" => "Type: {$doc['type']}\n<strong>{$doc['name']}</strong>\n{$doc['doc']}\n<a href=\"$base_url{$doc['link']}\">Go to web</a>"
-                            ],
-                            "thumb_url" => "https://avatars1.githubusercontent.com/u/22078968?s=200&v=4"
-                        ];
-                        # 50 es el límite de resultados de la API
-                        if (count($result_doc) >= 50) {
-                            break;
-                        }
-                    }
-                }
-                sendMethod("answerInlineQuery", [
-                    "inline_query_id" => "$inline_query_id",
-                    "results" => json_encode($result_doc)
-                ]);
-            }
-        }
+// Llamado recursivo de Callbacks
+foreach (glob("event/callback/*.php") as $callback) {
+    require_once $callback;
+}
+
+// Ejecución de Comandos
+if (isset($text)) {
+    $textUpdate = explode(" ", $text);
+}
+if (isset($textUpdate)) {
+    $textUpdate = preg_match('/@/', $textUpdate[0]) ? explode('@', $textUpdate[0]) : $textUpdate;
+}
+if (isset($textUpdate)) {
+    if (preg_match("/^\//", $textUpdate[0]) and in_array($textUpdate[0], $commands)) {
+        require_once "command" . $textUpdate[0] . ".php";
     }
-    sleep(1);
+}
+if (isset($text)) {
+    if (in_array($text, $especial)) {
+        $texto = strtolower(trim(preg_replace('/[[:^print:]]/', "", $text)));
+        require_once "command/" . $texto . ".php";
+    }
 }
 
-# Función para enviar los métodos a la API
-function sendMethod($method, $params = array()){
-    $url = "https://api.telegram.org/bot".TOKEN."/$method";
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array("Content-Type:multipart/form-data"));
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
-    return curl_exec($ch);
-}
+require_once "event/apiDocLaravel.php";
